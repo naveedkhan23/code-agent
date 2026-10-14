@@ -1,9 +1,15 @@
-# Headless/CLI use of the agent (the Tkinter GUI needs a desktop; use the .exe on Windows).
-FROM python:3.12-slim
+# Headless test/CI image for the Tetris desktop game.
+#
+# The game itself needs a desktop display for Tkinter.  This image runs only
+# the domain-logic test suite, which has no display, network or input deps.
+FROM python:3.11-slim
+
 WORKDIR /app
+
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt pytest
+RUN pip install --no-cache-dir -r requirements.txt
+
 COPY . .
-ENV DEEPSEEK_API_KEY=""
-# docker run -e DEEPSEEK_API_KEY=sk-... -v "$PWD/in:/in" -v "$PWD/out:/out" simple-code-agent
-ENTRYPOINT ["python", "main.py", "--cli", "--doc", "/in/Architecture_Documentation.md", "--views", "/in/Architecture_View.md", "--out", "/out"]
+
+# The GUI is not started here on purpose (it needs a host display).
+CMD ["python", "-m", "pytest", "-q"]
