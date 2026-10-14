@@ -16,7 +16,7 @@ source code, tests, `requirements.txt`, `Dockerfile` and a `README.md`.
 
 ## Links
 
-- **Download the .exe:** `PASTE YOUR RELEASE LINK HERE`
+- **Download the .exe:** `https://github.com/naveedkhan23/code-agent/releases/download/v1.0.0/CodeAgent.exe`
 - **Demo video:** `PASTE YOUR YOUTUBE LINK HERE`
 - **Example output (Space Fractions game):** see the `output_example/` folder
 
