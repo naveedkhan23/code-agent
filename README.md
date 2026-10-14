@@ -1,110 +1,164 @@
-# Tetris Desktop Game
+# Simple Code Agent
 
-A classic single-player Tetris game implemented in **Python 3 + Tkinter** with
-clean separation between the pure game logic and the desktop GUI.
+A small **Windows desktop app** that works like a simple version of Claude Code.
+You give it two Markdown files:
 
-## Quick start
+1. `Architecture_Documentation.md` - the written design of a system
+2. `Architecture_View.md` - UML diagrams (PlantUML / Mermaid)
 
-```bash
-# 1. (optional) create a virtual environment
-python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
+The agent reads them and writes a complete project into a folder you choose:
+source code, tests, `requirements.txt`, `Dockerfile` and a `README.md`.
 
-# 2. install the test dependency
-pip install -r requirements.txt
+- **AI model:** `deepseek-v4-pro`, used through the official DeepSeek API
+  (`https://api.deepseek.com`). No local model is needed.
+- **App type:** a desktop window made with Python and Tkinter.
+- **Windows .exe:** one file, no Python needed on the user's PC.
 
-# 3. run the game
-python main.py
+## Links
+
+- **Download the .exe:** `PASTE YOUR RELEASE LINK HERE`
+- **Demo video:** `PASTE YOUR YOUTUBE LINK HERE`
+- **Example output (Space Fractions game):** see the `output_example/` folder
+
+## How to use the app
+
+1. Double-click `CodeAgent.exe`.
+2. Paste your DeepSeek API key and click **Test connection**.
+   Leave "Model" as `deepseek-v4-pro` and "Base URL" as `https://api.deepseek.com`.
+3. Choose your `Architecture_Documentation.md` and `Architecture_View.md`.
+4. Choose an **empty** output folder.
+5. Click **Generate project** and watch the log. Wait for `status=finished`.
+6. Open the output folder. To run the generated game:
+   ```
+   pip install -r requirements.txt
+   python main.py
+   python -m pytest -q
+   ```
+
+Your API key is saved on your own PC in `%APPDATA%\SimpleCodeAgent\config.json`.
+It is never stored in this repository.
+
+Note: the DeepSeek API is prepaid. If you see `HTTP 402 Insufficient Balance`,
+add credit on platform.deepseek.com.
+
+## How it works
+
+```
+Input files  ->  Pre-processing  ->  Agent loop  <->  DeepSeek V4 Pro
+                 (Markdown to JSON)       |
+                                          v
+                                  Tools write files into the output folder
 ```
 
-The runtime uses only the Python standard library (`tkinter`, `json`, `random`).
-`requirements.txt` only contains `pytest` for the test suite.
+1. **Pre-processing** (`code_agent/preprocess.py`)
+   - The documentation becomes JSON: sections, tables, code blocks, requirement
+     IDs (FR / NFR / ASR) and the traceability table.
+   - The diagrams become JSON: classes and relations, sequence messages, state
+     changes, use cases, packages, nodes. The raw diagram text is also kept.
+   - The JSON is saved in `<output>/.agent/architecture.json`.
+2. **Agent loop** (`code_agent/agent.py`)
+   - We send the JSON and a system prompt to the model.
+   - The model answers with tool calls. The program runs them and sends the
+     results back. This repeats until the model calls `finish`.
+3. **Tools** (`code_agent/tools.py`)
 
-## Controls
+   | Tool | What it does |
+   |---|---|
+   | `write_file` | Create or replace a file |
+   | `read_file` | Read a file |
+   | `edit_file` | Change one exact piece of text in a file |
+   | `list_dir` | Show the files in the output folder |
+   | `check_syntax` | Check all `.py` and `.json` files for errors |
+   | `run_tests` | Run the generated tests (needs Python on the PC) |
+   | `update_todos` | Keep a visible to-do plan |
+   | `finish` | End the run (only allowed when everything is ready) |
 
-| Key | Action |
-|-----|--------|
-| Left / Right | Move piece |
-| Up | Rotate clockwise |
-| Down | Soft drop |
-| Space | Hard drop |
-| P | Pause / resume |
-| R | Restart |
+4. **Safety checks**
+   - **Sandbox:** the agent can only write inside the output folder.
+   - **Finish check:** the run is rejected until the project has a README,
+     `requirements.txt`, tests, a Dockerfile, at least 3 source files, and no
+     syntax errors.
+   - **Context shrinking:** in long runs, old tool results are shortened so the
+     conversation stays small.
+   - **Retries:** if the API fails, the app tries again with a delay.
+5. **Desktop rule:** the system prompt says the final product must be a
+   desktop app. If the documentation describes a web or microservice design,
+   the agent builds one desktop app instead, and keeps the design files
+   (OpenAPI, proto, SQL, etc.) in `docs/`.
 
-## Game rules
+## Ideas taken from Claude Code
 
-- 10 x 20 board, seven standard tetrominoes (I, O, T, S, Z, J, L).
-- Scoring: 1/2/3/4 cleared lines = 100/300/500/800 points x current level.
-- Level increases every 10 cleared lines; gravity speeds up with level.
-- The next piece, score, level, lines and persisted high score are shown.
-- High score is stored in `highscore.json` next to the project.
+I studied public descriptions of how Claude Code works, including the
+*How Claude Code Works* project. These are the main ideas I used, in a much
+smaller form:
+
+| Idea in Claude Code | What I did here |
+|---|---|
+| One main loop: call the model, run tools, repeat until the model stops asking for tools | `CodeAgent.run()` in `agent.py` |
+| Tools share one simple format, and the model chooses which to call | `TOOL_SCHEMAS` and `Workspace.call()` in `tools.py` |
+| The model plans with a to-do list | `update_todos`, shown live in the log |
+| Permissions: the agent cannot do whatever it wants | Sandbox: paths must stay inside the output folder |
+| The context window is limited, so old content is compressed | `compact()` shortens old tool results |
+| Check the work before stopping | `finish` is rejected until all checks pass |
+
+**Left out on purpose** (to keep the project small): sub-agents, MCP servers,
+hooks, long-term memory, shell commands, and streaming output.
 
 ## Project layout
 
-```text
-main.py                 # application entry point: python main.py
-tetris/
-  __init__.py
-  tetromino.py          # Tetromino shapes + rotation
-  engine.py             # GameEngine: board, collision, scoring, spawn
-  controller.py         # GameController: input, timer, state machine
-  window.py             # GameWindow: Tkinter rendering
-  highscore.py          # HighScoreStore: local JSON persistence
-tests/
-  test_tetromino.py
-  test_engine.py
-  test_highscore.py
-docs/
-  architecture.md
-requirements.txt
-Dockerfile
+```
+main.py                 start the app (GUI by default, --cli for no window)
+code_agent/
+  gui.py                Tkinter window
+  agent.py              the agent loop
+  llm.py                DeepSeek API client
+  tools.py              tools and sandbox
+  preprocess.py         Markdown to JSON
+  prompts.py            system prompt and rules
+  config.py             saves settings
+tests/                  automatic tests
+examples/               small sample inputs
+build_exe.bat           builds the .exe
+Dockerfile              run the agent without a window
 ```
 
-## Architecture mapping
+## Run from source
 
-| Documentation element | Implementation file |
-|-----------------------|---------------------|
-| `Tetromino` | `tetris/tetromino.py` |
-| `GameEngine` | `tetris/engine.py` |
-| `GameController` | `tetris/controller.py` |
-| `GameWindow` | `tetris/window.py` |
-| `HighScoreStore` | `tetris/highscore.py` |
-| Layered flow `GameWindow -> GameController -> GameEngine` | `main.py` wires `GameWindow` and `GameController` |
-| State diagram (Running / Paused / GameOver) | `GameController.state` + `pause()` / `restart()` / `tick()` |
-| Gravity-tick sequence | `GameController.tick()` |
+```
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements-dev.txt
+python main.py
+```
 
-More detail is available in [`docs/architecture.md`](docs/architecture.md).
+No window (command line):
+```
+set DEEPSEEK_API_KEY=your_key
+python main.py --cli --doc Architecture_Documentation.md --views Architecture_View.md --out out
+```
 
-## Testing
+## Build the .exe
 
-Tests are headless and cover only the domain logic (no display, input, network
-or infinite loops):
+```
+pip install requests pyinstaller
+pyinstaller --onefile --windowed --name CodeAgent --collect-all certifi main.py
+```
+The file is created at `dist\CodeAgent.exe`. You can also run `build_exe.bat`.
 
-```bash
+## Tests
+
+```
 python -m pytest -q
 ```
+The tests need no API key. They check the pre-processing, the tools and the
+sandbox, the whole agent loop with a fake model, and the API client with a
+fake local server.
 
-## Docker
+## Known limits
 
-The included `Dockerfile` builds a headless test image.  It does **not** start
-the Tkinter GUI because a desktop display is not available in the container:
-
-```bash
-docker build -t tetris-tests .
-docker run --rm tetris-tests
-```
-
-To run the GUI in Docker you would need to share the host X11/Wayland socket
-and install `python3-tk`; running it natively with `python main.py` is
-recommended.
-
-## Assumptions
-
-- "Restart" (R) is accepted in any state, not only after game over.
-- Hard-drop distance is tracked but does not add bonus points (not required by
-  the specification).
-- The high-score JSON file uses the shape `{"high_score": <int>}`.
-- Rendering is event/timer driven.  Redraws happen on gravity ticks and user
-  input, keeping the per-frame draw cost comfortably within a 60 FPS budget on
-  a normal laptop.
-- Tetromino randomisation uses a 7-bag algorithm for fair piece distribution.
+- The quality of the generated project depends on the AI model. If a result
+  has bugs, you can run the agent again.
+- `run_tests` only works when Python is installed on the user's PC. Without
+  it, the agent only checks syntax.
+- Very large input files are cut to about 120,000 characters each.
+- The generated game may need `pip install -r requirements.txt` before it runs.
